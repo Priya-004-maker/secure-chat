@@ -14,7 +14,7 @@ const userSchema = new Schema(
     password: { type: String, required: true, select: false },
     lastSeenAt: { type: Date, default: Date.now },
   },
-  { timestamps: true },
+  { timestamps: true, versionKey: false },
 );
 
 export type User = InferSchemaType<typeof userSchema>;

@@ -127,6 +127,8 @@ export const messages = {
     const data = await request<Conversation[]>("/api/messages/conversations");
     return data.map((c) => ({ ...c, lastMessage: fromBase64(c.lastMessage) }));
   },
+  delete: (messageId: string) =>
+    request<{ id: string }>(`/api/messages/${messageId}`, { method: "DELETE" }),
 };
 
 export const users = {

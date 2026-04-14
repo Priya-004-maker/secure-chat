@@ -3,6 +3,28 @@ import { Types } from "mongoose";
 import { MessageModel } from "@/models/message.model";
 import type { AuthedRequest } from "@/middleware/auth";
 
+export const deleteMessage = async (req: AuthedRequest, res: Response) => {
+  const { id } = req.params;
+  if (!id || !Types.ObjectId.isValid(id)) {
+    res.status(400).json({ error: "valid message id is required" });
+    return;
+  }
+
+  const message = await MessageModel.findById(id);
+  if (!message) {
+    res.status(404).json({ error: "message not found" });
+    return;
+  }
+
+  if (String(message.sender) !== req.userId) {
+    res.status(403).json({ error: "only the sender can delete this message" });
+    return;
+  }
+
+  await message.deleteOne();
+  res.json({ id });
+};
+
 export const sendMessage = async (req: AuthedRequest, res: Response) => {
   const { recipientId, content } = req.body ?? {};
   if (!recipientId || !Types.ObjectId.isValid(recipientId)) {

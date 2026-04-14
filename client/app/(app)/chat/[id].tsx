@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Keyboard,
+  Alert,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -87,11 +88,23 @@ function Avatar({
   );
 }
 
-function MessageBubble({ message, isOwn }: { message: Message; isOwn: boolean }) {
+function MessageBubble({
+  message,
+  isOwn,
+  onLongPress,
+}: {
+  message: Message;
+  isOwn: boolean;
+  onLongPress?: () => void;
+}) {
   const seen = isOwn && !!message.seenAt;
   return (
     <View className={`px-3 mb-1 ${isOwn ? "items-end" : "items-start"}`}>
-      <View
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onLongPress={onLongPress}
+        delayLongPress={300}
+        disabled={!onLongPress}
         className={`max-w-[80%] rounded-xl px-3 py-2 ${
           isOwn ? "bg-bubble-own rounded-tr-sm" : "bg-bubble-other rounded-tl-sm"
         }`}
@@ -115,7 +128,7 @@ function MessageBubble({ message, isOwn }: { message: Message; isOwn: boolean })
             />
           ) : null}
         </View>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -183,6 +196,26 @@ export default function ChatScreen() {
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [id, fetchMessages, refreshOther]);
+
+  const confirmDelete = (messageId: string) => {
+    Alert.alert("Delete message", "This will remove the message for everyone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          const prev = items;
+          setItems((curr) => curr.filter((m) => m._id !== messageId));
+          try {
+            await messagesApi.delete(messageId);
+          } catch (err) {
+            setItems(prev);
+            if (err instanceof ApiError) setError(err.message);
+          }
+        },
+      },
+    ]);
+  };
 
   const sendMessage = async () => {
     const content = input.trim();
@@ -258,9 +291,16 @@ export default function ChatScreen() {
           keyExtractor={(item) => item._id}
           inverted
           contentContainerStyle={{ paddingVertical: 8 }}
-          renderItem={({ item }) => (
-            <MessageBubble message={item} isOwn={item.sender === user?.id} />
-          )}
+          renderItem={({ item }) => {
+            const isOwn = item.sender === user?.id;
+            return (
+              <MessageBubble
+                message={item}
+                isOwn={isOwn}
+                onLongPress={isOwn ? () => confirmDelete(item._id) : undefined}
+              />
+            );
+          }}
           ListEmptyComponent={
             <View className="items-center justify-center pt-20 px-8">
               <Text className="text-dark-muted text-sm text-center">
