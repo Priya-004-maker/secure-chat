@@ -1,76 +1,71 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { auth, tokenStore, type User } from "../lib/api";
 
-type User = {
-  id: string;
-  name: string;
-  email: string;
-  avatar: string;
-};
+const USER_KEY = "auth-user";
 
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  signIn: async () => false,
+  login: async () => {},
+  signUp: async () => {},
   signOut: async () => {},
 });
-
-const MOCK_USERS: Record<string, { password: string; user: User }> = {
-  "ok@ok.com": {
-    password: "password",
-    user: {
-      id: "u1",
-      name: "Alice Johnson",
-      email: "ok@ok.com",
-      avatar: "AJ",
-    },
-  },
-  "bob@test.com": {
-    password: "password",
-    user: {
-      id: "u2",
-      name: "Bob Smith",
-      email: "bob@test.com",
-      avatar: "BS",
-    },
-  },
-};
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    AsyncStorage.getItem("user").then((stored) => {
-      if (stored) setUser(JSON.parse(stored));
+    (async () => {
+      const [storedUser, token] = await Promise.all([
+        AsyncStorage.getItem(USER_KEY),
+        tokenStore.get(),
+      ]);
+      if (storedUser && token) {
+        setUser(JSON.parse(storedUser) as User);
+      }
       setIsLoading(false);
-    });
+    })();
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    const entry = MOCK_USERS[email.toLowerCase()];
-    if (entry && entry.password === password) {
-      setUser(entry.user);
-      await AsyncStorage.setItem("user", JSON.stringify(entry.user));
-      return true;
-    }
-    return false;
+  const persist = async (nextUser: User, token: string) => {
+    await Promise.all([
+      tokenStore.set(token),
+      AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser)),
+    ]);
+    setUser(nextUser);
+  };
+
+  const login = async (email: string, password: string) => {
+    const { token, user: nextUser } = await auth.login({ email, password });
+    await persist(nextUser, token);
+  };
+
+  const signUp = async (name: string, email: string, password: string) => {
+    const { token, user: nextUser } = await auth.signup({
+      name,
+      email,
+      password,
+    });
+    await persist(nextUser, token);
   };
 
   const signOut = async () => {
+    await Promise.all([tokenStore.clear(), AsyncStorage.removeItem(USER_KEY)]);
     setUser(null);
-    await AsyncStorage.removeItem("user");
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, isLoading, login, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );
