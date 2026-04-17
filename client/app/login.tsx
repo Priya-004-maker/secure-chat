@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { router, Link } from "expo-router";
 import { useAuth } from "./context/AuthContext";
@@ -51,10 +52,12 @@ export default function Login() {
       <View className="flex-1 justify-center px-8">
         {/* Logo / Branding */}
         <View className="items-center mb-12">
-          <View className="w-20 h-20 rounded-full bg-accent items-center justify-center mb-4">
-            <Ionicons name="chatbubbles" size={40} color="#fff" />
-          </View>
-          <Text className="text-dark-text text-3xl font-bold">SecureChat</Text>
+          <Image
+            source={require("../assets/images/logo.png")}
+            className="w-20 h-20 mb-4"
+            resizeMode="contain"
+          />
+          <Text className="text-dark-text text-3xl font-bold">Delta</Text>
           <Text className="text-dark-muted text-base mt-2">
             End-to-end encrypted messaging
           </Text>

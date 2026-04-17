@@ -190,7 +190,7 @@ export default function ChatList() {
         className="bg-dark-surface pb-3 px-4"
       >
         <View className="flex-row justify-between items-center">
-          <Text className="text-dark-text text-2xl font-bold">SecureChat</Text>
+          <Text className="text-dark-text text-2xl font-bold">Delta</Text>
           <View className="flex-row gap-5">
             <TouchableOpacity onPress={signOut}>
               <Ionicons name="log-out-outline" size={24} color="#8696A0" />

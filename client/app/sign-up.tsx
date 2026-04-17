@@ -62,7 +62,7 @@ export default function SignUp() {
             Create account
           </Text>
           <Text className="text-dark-muted text-base mt-2">
-            Join SecureChat in seconds
+            Join Delta in seconds
           </Text>
         </View>
 

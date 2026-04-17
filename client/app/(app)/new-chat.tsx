@@ -96,7 +96,7 @@ export default function NewChat() {
         </TouchableOpacity>
 
         <Text className="text-dark-muted text-xs text-center mt-6">
-          The user must already have a SecureChat account.
+          The user must already have a Delta account.
         </Text>
       </View>
     </KeyboardAvoidingView>

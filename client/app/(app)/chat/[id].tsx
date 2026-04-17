@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -215,15 +215,15 @@ function mediaDisplaySize(media: { width?: number; height?: number }) {
   return { width: Math.round(w), height: Math.round(h) };
 }
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   isOwn,
-  onLongPress,
+  onDeleteMessage,
   onMediaPress,
 }: {
   message: Message;
   isOwn: boolean;
-  onLongPress?: () => void;
+  onDeleteMessage?: (messageId: string) => void;
   onMediaPress?: (media: MessageMedia) => void;
 }) {
   const seen = isOwn && !!message.seenAt;
@@ -232,7 +232,6 @@ function MessageBubble({
   const hasVideo = media?.type === "video" && !!media.url;
   const hasAudio = media?.type === "audio" && !!media.url;
   const hasVisualMedia = hasImage || hasVideo;
-  const hasMedia = hasVisualMedia || hasAudio;
   const hasText = !!message.content;
   const mediaSize = hasVisualMedia
     ? mediaDisplaySize({ width: media?.width, height: media?.height })
@@ -242,9 +241,9 @@ function MessageBubble({
     <View className={`px-3 mb-1 ${isOwn ? "items-end" : "items-start"}`}>
       <TouchableOpacity
         activeOpacity={0.8}
-        onLongPress={onLongPress}
+        onLongPress={isOwn ? () => onDeleteMessage?.(message._id) : undefined}
         delayLongPress={300}
-        disabled={!onLongPress}
+        disabled={!isOwn || !onDeleteMessage}
         className={`max-w-[80%] rounded-xl ${
           hasVisualMedia ? "p-1" : "px-3 py-2"
         } ${isOwn ? "bg-bubble-own rounded-tr-sm" : "bg-bubble-other rounded-tl-sm"}`}
@@ -253,7 +252,7 @@ function MessageBubble({
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => onMediaPress?.(media)}
-            onLongPress={onLongPress}
+            onLongPress={isOwn ? () => onDeleteMessage?.(message._id) : undefined}
             delayLongPress={300}
           >
             <Image
@@ -268,7 +267,7 @@ function MessageBubble({
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => onMediaPress?.(media)}
-            onLongPress={onLongPress}
+            onLongPress={isOwn ? () => onDeleteMessage?.(message._id) : undefined}
             delayLongPress={300}
             style={{
               width: mediaSize.width,
@@ -359,7 +358,9 @@ function MessageBubble({
       </TouchableOpacity>
     </View>
   );
-}
+});
+
+MessageBubble.displayName = "MessageBubble";
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -429,7 +430,7 @@ export default function ChatScreen() {
     return () => clearInterval(timer);
   }, [id, fetchMessages, refreshOther]);
 
-  const confirmDelete = (messageId: string) => {
+  const confirmDelete = useCallback((messageId: string) => {
     Alert.alert("Delete message", "This will remove the message for everyone.", [
       { text: "Cancel", style: "cancel" },
       {
@@ -447,7 +448,7 @@ export default function ChatScreen() {
         },
       },
     ]);
-  };
+  }, [items]);
 
   const sendMessage = async () => {
     const content = input.trim();
@@ -464,6 +465,39 @@ export default function ChatScreen() {
       setSending(false);
     }
   };
+
+  const closePicker = useCallback(() => {
+    setPickerVisible(false);
+  }, []);
+
+  const togglePicker = useCallback(() => {
+    if (pickerVisible) {
+      setPickerVisible(false);
+      inputRef.current?.focus();
+      return;
+    }
+    Keyboard.dismiss();
+    setPickerVisible(true);
+  }, [pickerVisible]);
+
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    setInput((prev) => prev + emoji);
+  }, []);
+
+  const renderMessageItem = useCallback(
+    ({ item }: { item: Message }) => {
+      const isOwn = item.sender === user?.id;
+      return (
+        <MessageBubble
+          message={item}
+          isOwn={isOwn}
+          onDeleteMessage={confirmDelete}
+          onMediaPress={setViewerMedia}
+        />
+      );
+    },
+    [user?.id, confirmDelete],
+  );
 
   const pickAndSendMedia = async () => {
     if (!id || sending) return;
@@ -637,7 +671,8 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
       className="flex-1 bg-dark-bg"
     >
       <View
@@ -682,18 +717,13 @@ export default function ChatScreen() {
           data={items}
           keyExtractor={(item) => item._id}
           inverted
+          removeClippedSubviews
+          initialNumToRender={12}
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingVertical: 8 }}
-          renderItem={({ item }) => {
-            const isOwn = item.sender === user?.id;
-            return (
-              <MessageBubble
-                message={item}
-                isOwn={isOwn}
-                onLongPress={isOwn ? () => confirmDelete(item._id) : undefined}
-                onMediaPress={(media) => setViewerMedia(media)}
-              />
-            );
-          }}
+          renderItem={renderMessageItem}
           ListEmptyComponent={
             <View className="items-center justify-center pt-20 px-8">
               <Text className="text-dark-muted text-sm text-center">
@@ -736,15 +766,7 @@ export default function ChatScreen() {
           <View className="flex-1 flex-row items-center bg-dark-input rounded-2xl px-2 py-1 mx-1">
             <TouchableOpacity
               className="p-1.5"
-              onPress={() => {
-                if (pickerVisible) {
-                  setPickerVisible(false);
-                  inputRef.current?.focus();
-                } else {
-                  Keyboard.dismiss();
-                  setPickerVisible(true);
-                }
-              }}
+              onPress={togglePicker}
             >
               <Ionicons
                 name={pickerVisible ? "chevron-down-outline" : "happy-outline"}
@@ -759,17 +781,17 @@ export default function ChatScreen() {
               placeholderTextColor="#8696A0"
               value={input}
               onChangeText={setInput}
-              onFocus={() => setPickerVisible(false)}
+              onFocus={closePicker}
               multiline
               editable={!sending}
             />
-            {/* <TouchableOpacity
+            <TouchableOpacity
               className="p-1.5"
               onPress={pickAndSendMedia}
               disabled={sending}
             >
               <Ionicons name="attach" size={22} color="#8696A0" />
-            </TouchableOpacity> */}
+            </TouchableOpacity>
           </View>
         )}
         <TouchableOpacity
@@ -801,8 +823,8 @@ export default function ChatScreen() {
         <View style={{ height: 320, backgroundColor: "#111B21" }}>
           <EmojiPicker
             emojis={emojiData}
-            onEmojiSelect={(emoji) => setInput((prev) => prev + emoji)}
-            onClose={() => setPickerVisible(false)}
+            onEmojiSelect={handleEmojiSelect}
+            onClose={closePicker}
           />
         </View>
       ) : null}
