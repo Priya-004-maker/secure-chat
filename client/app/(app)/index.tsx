@@ -82,9 +82,18 @@ function Avatar({
   );
 }
 
+function lastMessagePreview(convo: Conversation): string {
+  if (convo.lastMessage) return convo.lastMessage;
+  if (convo.lastMediaType === "image") return "📷 Photo";
+  if (convo.lastMediaType === "video") return "🎥 Video";
+  if (convo.lastMediaType === "audio") return "🎵 Audio";
+  return "";
+}
+
 function ConversationItem({ convo }: { convo: Conversation }) {
   const display = convo.name || convo.email;
   const hasUnread = convo.unreadCount > 0;
+  const preview = lastMessagePreview(convo);
   return (
     <TouchableOpacity
       onPress={() => router.push(`/(app)/chat/${convo.userId}`)}
@@ -118,7 +127,7 @@ function ConversationItem({ convo }: { convo: Conversation }) {
             }`}
             numberOfLines={1}
           >
-            {convo.lastMessage}
+            {preview}
           </Text>
           {hasUnread ? (
             <View className="min-w-[22px] h-[22px] px-[7px] rounded-full bg-accent items-center justify-center">

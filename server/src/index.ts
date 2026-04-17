@@ -2,9 +2,11 @@ import express from "express";
 import cors from "cors";
 import { config } from "dotenv";
 import { connectDB } from "@/lib/db";
+import { ensureMediaLifecycle } from "@/lib/s3";
 import authRoutes from "@/routes/auth.routes";
 import messageRoutes from "@/routes/message.routes";
 import userRoutes from "@/routes/user.routes";
+import uploadRoutes from "@/routes/upload.routes";
 import { requestLogger, errorLogger } from "@/middleware/logger";
 
 config({ quiet: true });
@@ -23,6 +25,7 @@ app.get("/", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/uploads", uploadRoutes);
 
 app.use(errorLogger);
 
@@ -31,6 +34,9 @@ connectDB()
     app.listen(port, () => {
       console.log(`Server is running at Port ${port}`);
     });
+    ensureMediaLifecycle().catch((err) =>
+      console.warn("[s3] lifecycle setup failed:", err),
+    );
   })
   .catch((err) => {
     console.error("Failed to connect to MongoDB:", err);

@@ -16,11 +16,27 @@ export type AuthResponse = {
   user: User;
 };
 
+export type MediaType = "image" | "video" | "audio";
+
+export type MessageMedia = {
+  type: MediaType;
+  url: string;
+  key: string;
+  mimeType: string;
+  size?: number;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+  thumbnailUrl?: string;
+  thumbnailKey?: string;
+};
+
 export type Message = {
   _id: string;
   sender: string;
   recipient: string;
   content: string;
+  media: MessageMedia | null;
   sentAt: string;
   seenAt: string | null;
 };
@@ -31,11 +47,20 @@ export type Conversation = {
   email: string;
   lastSeenAt?: string;
   lastMessage: string;
+  lastMediaType?: MediaType | null;
   lastAt: string;
   lastSender: string;
   lastMessageSeenAt: string | null;
   unreadCount: number;
 };
+
+export type PresignResponse = {
+  uploadUrl: string;
+  key: string;
+  expiresIn: number;
+};
+
+export type OutgoingMedia = Omit<MessageMedia, "url" | "thumbnailUrl">;
 
 export class ApiError extends Error {
   status: number;
@@ -108,7 +133,7 @@ export const auth = {
 
 const decodeMessage = (m: Message): Message => ({
   ...m,
-  content: fromBase64(m.content),
+  content: m.content ? fromBase64(m.content) : "",
 });
 
 export const messages = {
@@ -116,20 +141,96 @@ export const messages = {
     const data = await request<Message[]>(`/api/messages/${otherUserId}`);
     return data.map(decodeMessage);
   },
-  send: async (input: { recipientId: string; content: string }) => {
+  send: async (input: {
+    recipientId: string;
+    content?: string;
+    media?: OutgoingMedia;
+  }) => {
+    const body: Record<string, unknown> = { recipientId: input.recipientId };
+    if (input.content) body.content = toBase64(input.content);
+    if (input.media) body.media = input.media;
     const msg = await request<Message>("/api/messages", {
       method: "POST",
-      body: { recipientId: input.recipientId, content: toBase64(input.content) },
+      body,
     });
     return decodeMessage(msg);
   },
   conversations: async () => {
     const data = await request<Conversation[]>("/api/messages/conversations");
-    return data.map((c) => ({ ...c, lastMessage: fromBase64(c.lastMessage) }));
+    return data.map((c) => ({
+      ...c,
+      lastMessage: c.lastMessage ? fromBase64(c.lastMessage) : "",
+    }));
   },
   delete: (messageId: string) =>
     request<{ id: string }>(`/api/messages/${messageId}`, { method: "DELETE" }),
 };
+
+export const uploads = {
+  presign: (input: { type: MediaType; contentType: string; ext?: string; size?: number }) =>
+    request<PresignResponse>("/api/uploads/presign", {
+      method: "POST",
+      body: input,
+    }),
+};
+
+const defaultMimeFor = (type: MediaType) =>
+  type === "image" ? "image/jpeg" : type === "video" ? "video/mp4" : "audio/mpeg";
+
+const defaultExtFor = (type: MediaType) =>
+  type === "image" ? "jpg" : type === "video" ? "mp4" : "mp3";
+
+export async function uploadMediaAsset(
+  type: MediaType,
+  asset: {
+    uri: string;
+    mimeType?: string | null;
+    fileName?: string | null;
+    fileSize?: number | null;
+    width?: number;
+    height?: number;
+    duration?: number | null;
+  },
+): Promise<OutgoingMedia> {
+  const mimeType = asset.mimeType || defaultMimeFor(type);
+  const ext = (
+    asset.fileName?.split(".").pop() ||
+    mimeType.split("/")[1] ||
+    defaultExtFor(type)
+  ).toLowerCase();
+
+  const presignBody: { type: MediaType; contentType: string; ext: string; size?: number } = {
+    type,
+    contentType: mimeType,
+    ext,
+  };
+  if (typeof asset.fileSize === "number") presignBody.size = asset.fileSize;
+
+  const presigned = await uploads.presign(presignBody);
+
+  const fileRes = await fetch(asset.uri);
+  const blob = await fileRes.blob();
+
+  const putRes = await fetch(presigned.uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType },
+    body: blob,
+  });
+  if (!putRes.ok) {
+    throw new ApiError(putRes.status, `Failed to upload ${type} to storage`);
+  }
+
+  const media: OutgoingMedia = {
+    type,
+    key: presigned.key,
+    mimeType,
+    size: typeof asset.fileSize === "number" ? asset.fileSize : blob.size,
+  };
+  if (typeof asset.width === "number") media.width = asset.width;
+  if (typeof asset.height === "number") media.height = asset.height;
+  if (typeof asset.duration === "number") media.durationMs = Math.round(asset.duration);
+  return media;
+}
 
 export const users = {
   searchByEmail: (email: string) =>
