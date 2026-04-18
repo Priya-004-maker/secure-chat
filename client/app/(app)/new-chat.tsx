@@ -4,10 +4,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,7 +31,9 @@ export default function NewChat() {
       router.replace(`/(app)/chat/${found.id}`);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Something went wrong. Try again.",
+        err instanceof ApiError
+          ? err.message
+          : "Something went wrong. Try again.",
       );
     } finally {
       setLoading(false);
@@ -41,7 +42,8 @@ export default function NewChat() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior="padding"
+      keyboardVerticalOffset={0}
       className="flex-1 bg-dark-bg"
     >
       <View

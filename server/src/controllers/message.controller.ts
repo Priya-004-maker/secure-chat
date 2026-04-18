@@ -19,23 +19,26 @@ type StoredMessage = {
   toObject: () => Record<string, unknown>;
 };
 
-const serializeMessage = (doc: unknown) => {
+const enrichMedia = (media: unknown) => {
+  if (!media || typeof media !== "object") return media;
+  const m = media as { key?: string; thumbnailKey?: string; [k: string]: unknown };
+  if (!m.key) return m;
+  const enriched: Record<string, unknown> = { ...m, url: publicUrlFor(m.key) };
+  if (m.thumbnailKey) enriched.thumbnailUrl = publicUrlFor(m.thumbnailKey);
+  return enriched;
+};
+
+const serializeMessage = (doc: unknown): Record<string, unknown> => {
   const obj =
     doc && typeof (doc as StoredMessage).toObject === "function"
       ? (doc as StoredMessage).toObject()
       : (doc as Record<string, unknown>);
-  const media = obj.media as
-    | { key?: string; thumbnailKey?: string; [k: string]: unknown }
-    | null
-    | undefined;
-  if (media && media.key) {
-    const enriched: Record<string, unknown> = { ...media, url: publicUrlFor(media.key) };
-    if (media.thumbnailKey) {
-      enriched.thumbnailUrl = publicUrlFor(media.thumbnailKey);
-    }
-    return { ...obj, media: enriched };
+  const out: Record<string, unknown> = { ...obj, media: enrichMedia(obj.media) };
+  if (obj.replyTo && typeof obj.replyTo === "object") {
+    const reply = obj.replyTo as Record<string, unknown>;
+    out.replyTo = { ...reply, media: enrichMedia(reply.media) };
   }
-  return obj;
+  return out;
 };
 
 const parseMedia = (raw: unknown) => {

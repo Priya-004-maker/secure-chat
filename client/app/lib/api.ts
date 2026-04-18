@@ -31,12 +31,22 @@ export type MessageMedia = {
   thumbnailKey?: string;
 };
 
+export type ReplyPreview = {
+  _id: string;
+  sender: string;
+  recipient: string;
+  content: string;
+  media: MessageMedia | null;
+  sentAt: string;
+};
+
 export type Message = {
   _id: string;
   sender: string;
   recipient: string;
   content: string;
   media: MessageMedia | null;
+  replyTo?: ReplyPreview | null;
   sentAt: string;
   seenAt: string | null;
 };
@@ -134,21 +144,50 @@ export const auth = {
 const decodeMessage = (m: Message): Message => ({
   ...m,
   content: m.content ? fromBase64(m.content) : "",
+  replyTo: m.replyTo
+    ? {
+        ...m.replyTo,
+        content: m.replyTo.content ? fromBase64(m.replyTo.content) : "",
+      }
+    : null,
 });
 
+export type MessagesPage = {
+  messages: Message[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 export const messages = {
-  list: async (otherUserId: string) => {
-    const data = await request<Message[]>(`/api/messages/${otherUserId}`);
-    return data.map(decodeMessage);
+  list: async (
+    otherUserId: string,
+    opts: { before?: string; limit?: number } = {},
+  ): Promise<MessagesPage> => {
+    const params = new URLSearchParams();
+    if (opts.before) params.set("before", opts.before);
+    if (opts.limit) params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    const data = await request<{
+      messages: Message[];
+      nextCursor: string | null;
+      hasMore: boolean;
+    }>(`/api/messages/${otherUserId}${qs ? `?${qs}` : ""}`);
+    return {
+      messages: data.messages.map(decodeMessage),
+      nextCursor: data.nextCursor,
+      hasMore: data.hasMore,
+    };
   },
   send: async (input: {
     recipientId: string;
     content?: string;
     media?: OutgoingMedia;
+    replyTo?: string;
   }) => {
     const body: Record<string, unknown> = { recipientId: input.recipientId };
     if (input.content) body.content = toBase64(input.content);
     if (input.media) body.media = input.media;
+    if (input.replyTo) body.replyTo = input.replyTo;
     const msg = await request<Message>("/api/messages", {
       method: "POST",
       body,
@@ -236,4 +275,11 @@ export const users = {
   searchByEmail: (email: string) =>
     request<User>(`/api/users/search?email=${encodeURIComponent(email)}`),
   getById: (id: string) => request<User>(`/api/users/${id}`),
+  updateProfile: (input: { name?: string; email?: string }) =>
+    request<User>("/api/users/me", { method: "PATCH", body: input }),
+  changePassword: (input: { currentPassword: string; newPassword: string }) =>
+    request<{ ok: true }>("/api/users/me/password", {
+      method: "PATCH",
+      body: input,
+    }),
 };

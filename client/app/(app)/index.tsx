@@ -192,6 +192,9 @@ export default function ChatList() {
         <View className="flex-row justify-between items-center">
           <Text className="text-dark-text text-2xl font-bold">Delta</Text>
           <View className="flex-row gap-5">
+            <TouchableOpacity onPress={() => router.push("/(app)/profile")}>
+              <Ionicons name="person-circle-outline" size={26} color="#8696A0" />
+            </TouchableOpacity>
             <TouchableOpacity onPress={signOut}>
               <Ionicons name="log-out-outline" size={24} color="#8696A0" />
             </TouchableOpacity>

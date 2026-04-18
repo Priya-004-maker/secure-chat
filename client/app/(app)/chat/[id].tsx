@@ -5,8 +5,6 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Keyboard,
   Alert,
@@ -15,6 +13,7 @@ import {
   Dimensions,
   StatusBar,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -215,16 +214,28 @@ function mediaDisplaySize(media: { width?: number; height?: number }) {
   return { width: Math.round(w), height: Math.round(h) };
 }
 
+function replyPreviewLabel(reply: Message["replyTo"]): { icon?: string; text: string } {
+  if (!reply) return { text: "" };
+  if (reply.media?.type === "image") return { icon: "image", text: reply.content || "Photo" };
+  if (reply.media?.type === "video") return { icon: "videocam", text: reply.content || "Video" };
+  if (reply.media?.type === "audio") return { icon: "mic", text: reply.content || "Voice message" };
+  return { text: reply.content };
+}
+
 const MessageBubble = memo(function MessageBubble({
   message,
   isOwn,
+  currentUserId,
   onDeleteMessage,
   onMediaPress,
+  onReplyMessage,
 }: {
   message: Message;
   isOwn: boolean;
+  currentUserId?: string;
   onDeleteMessage?: (messageId: string) => void;
   onMediaPress?: (media: MessageMedia) => void;
+  onReplyMessage?: (message: Message) => void;
 }) {
   const seen = isOwn && !!message.seenAt;
   const media = message.media;
@@ -236,23 +247,68 @@ const MessageBubble = memo(function MessageBubble({
   const mediaSize = hasVisualMedia
     ? mediaDisplaySize({ width: media?.width, height: media?.height })
     : null;
+  const reply = message.replyTo ?? null;
+  const replyLabel = replyPreviewLabel(reply);
+  const replyIsOwn = reply ? reply.sender === currentUserId : false;
+
+  const handleLongPress = () => {
+    if (!onReplyMessage && !onDeleteMessage) return;
+    const buttons: { text: string; style?: "cancel" | "destructive"; onPress?: () => void }[] = [
+      { text: "Cancel", style: "cancel" },
+      { text: "Reply", onPress: () => onReplyMessage?.(message) },
+    ];
+    if (isOwn && onDeleteMessage) {
+      buttons.push({
+        text: "Delete",
+        style: "destructive",
+        onPress: () => onDeleteMessage(message._id),
+      });
+    }
+    Alert.alert("Message", undefined, buttons);
+  };
 
   return (
     <View className={`px-3 mb-1 ${isOwn ? "items-end" : "items-start"}`}>
       <TouchableOpacity
         activeOpacity={0.8}
-        onLongPress={isOwn ? () => onDeleteMessage?.(message._id) : undefined}
+        onLongPress={handleLongPress}
         delayLongPress={300}
-        disabled={!isOwn || !onDeleteMessage}
         className={`max-w-[80%] rounded-xl ${
           hasVisualMedia ? "p-1" : "px-3 py-2"
         } ${isOwn ? "bg-bubble-own rounded-tr-sm" : "bg-bubble-other rounded-tl-sm"}`}
       >
+        {reply ? (
+          <View
+            className={`mb-1 pl-2 py-1 pr-2 rounded-md ${hasVisualMedia ? "mx-1 mt-1" : ""}`}
+            style={{
+              borderLeftWidth: 3,
+              borderLeftColor: replyIsOwn ? "#60A5FA" : "#93C5FD",
+              backgroundColor: "rgba(255,255,255,0.08)",
+            }}
+          >
+            <Text className="text-[11px] font-semibold text-blue-300" numberOfLines={1}>
+              {replyIsOwn ? "You" : "Them"}
+            </Text>
+            <View className="flex-row items-center mt-0.5">
+              {replyLabel.icon ? (
+                <Ionicons
+                  name={replyLabel.icon as keyof typeof Ionicons.glyphMap}
+                  size={12}
+                  color="#B8C5CC"
+                  style={{ marginRight: 4 }}
+                />
+              ) : null}
+              <Text className="text-dark-muted text-xs flex-1" numberOfLines={1}>
+                {replyLabel.text}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         {hasImage && mediaSize && media ? (
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => onMediaPress?.(media)}
-            onLongPress={isOwn ? () => onDeleteMessage?.(message._id) : undefined}
+            onLongPress={handleLongPress}
             delayLongPress={300}
           >
             <Image
@@ -267,7 +323,7 @@ const MessageBubble = memo(function MessageBubble({
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => onMediaPress?.(media)}
-            onLongPress={isOwn ? () => onDeleteMessage?.(message._id) : undefined}
+            onLongPress={handleLongPress}
             delayLongPress={300}
             style={{
               width: mediaSize.width,
@@ -372,25 +428,73 @@ export default function ChatScreen() {
   const [items, setItems] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [pickerVisible, setPickerVisible] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<MessageMedia | null>(null);
+  const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 250);
 
-  const fetchMessages = useCallback(async () => {
-    if (!id) return;
+  const PAGE_SIZE = 30;
+
+  const fetchMessages = useCallback(
+    async ({ reset = false }: { reset?: boolean } = {}) => {
+      if (!id) return;
+      try {
+        const page = await messagesApi.list(id, { limit: PAGE_SIZE });
+        const newest = [...page.messages].reverse();
+        if (reset) {
+          setItems(newest);
+          setNextCursor(page.nextCursor);
+          setHasMore(page.hasMore);
+          return;
+        }
+        setItems((prev) => {
+          if (prev.length === 0) return newest;
+          const existing = new Set(prev.map((m) => m._id));
+          const fresh = newest.filter((m) => !existing.has(m._id));
+          if (fresh.length === 0) {
+            return prev.map((m) => newest.find((n) => n._id === m._id) ?? m);
+          }
+          return [...fresh, ...prev];
+        });
+      } catch (err) {
+        if (err instanceof ApiError) setError(err.message);
+      }
+    },
+    [id],
+  );
+
+  const loadOlder = useCallback(async () => {
+    if (!id || loadingMore || !hasMore || !nextCursor) return;
+    setLoadingMore(true);
     try {
-      const data = await messagesApi.list(id);
-      setItems([...data].reverse());
+      const page = await messagesApi.list(id, {
+        limit: PAGE_SIZE,
+        before: nextCursor,
+      });
+      setItems((prev) => {
+        const existing = new Set(prev.map((m) => m._id));
+        const older = [...page.messages]
+          .reverse()
+          .filter((m) => !existing.has(m._id));
+        return [...prev, ...older];
+      });
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
+    } finally {
+      setLoadingMore(false);
     }
-  }, [id]);
+  }, [id, loadingMore, hasMore, nextCursor]);
 
   const refreshOther = useCallback(async () => {
     if (!id) return;
@@ -408,7 +512,10 @@ export default function ChatScreen() {
     (async () => {
       setLoading(true);
       try {
-        const [profile] = await Promise.all([users.getById(id), fetchMessages()]);
+        const [profile] = await Promise.all([
+          users.getById(id),
+          fetchMessages({ reset: true }),
+        ]);
         if (!cancelled) setOther(profile);
       } catch (err) {
         if (!cancelled && err instanceof ApiError) setError(err.message);
@@ -455,16 +562,28 @@ export default function ChatScreen() {
     if (!content || !id || sending) return;
     setSending(true);
     setInput("");
+    const replyToId = replyTarget?._id;
+    setReplyTarget(null);
     try {
-      const created = await messagesApi.send({ recipientId: id, content });
+      const created = await messagesApi.send({
+        recipientId: id,
+        content,
+        replyTo: replyToId,
+      });
       setItems((prev) => [created, ...prev]);
     } catch (err) {
       setInput(content);
+      if (replyToId && replyTarget) setReplyTarget(replyTarget);
       if (err instanceof ApiError) setError(err.message);
     } finally {
       setSending(false);
     }
   };
+
+  const startReply = useCallback((message: Message) => {
+    setReplyTarget(message);
+    inputRef.current?.focus();
+  }, []);
 
   const closePicker = useCallback(() => {
     setPickerVisible(false);
@@ -491,12 +610,14 @@ export default function ChatScreen() {
         <MessageBubble
           message={item}
           isOwn={isOwn}
+          currentUserId={user?.id}
           onDeleteMessage={confirmDelete}
           onMediaPress={setViewerMedia}
+          onReplyMessage={startReply}
         />
       );
     },
-    [user?.id, confirmDelete],
+    [user?.id, confirmDelete, startReply],
   );
 
   const pickAndSendMedia = async () => {
@@ -559,13 +680,16 @@ export default function ChatScreen() {
       }
 
       const pendingText = input.trim();
+      const replyToId = replyTarget?._id;
       const created = await messagesApi.send({
         recipientId: id,
         content: pendingText || undefined,
         media,
+        replyTo: replyToId,
       });
       setItems((prev) => [created, ...prev]);
       if (pendingText) setInput("");
+      setReplyTarget(null);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else if (err instanceof Error) setError(err.message);
@@ -646,11 +770,14 @@ export default function ChatScreen() {
         fileName: `voice.${ext}`,
         duration: durationMs,
       });
+      const replyToId = replyTarget?._id;
       const created = await messagesApi.send({
         recipientId: id,
         media,
+        replyTo: replyToId,
       });
       setItems((prev) => [created, ...prev]);
+      setReplyTarget(null);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else if (err instanceof Error) setError(err.message);
@@ -671,8 +798,8 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={insets.top}
+      behavior="padding"
+      keyboardVerticalOffset={0}
       className="flex-1 bg-dark-bg"
     >
       <View
@@ -724,6 +851,15 @@ export default function ChatScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingVertical: 8 }}
           renderItem={renderMessageItem}
+          onEndReached={loadOlder}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            loadingMore ? (
+              <View className="py-3">
+                <ActivityIndicator size="small" color="#2563EB" />
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <View className="items-center justify-center pt-20 px-8">
               <Text className="text-dark-muted text-sm text-center">
@@ -736,6 +872,41 @@ export default function ChatScreen() {
 
       {error ? (
         <Text className="text-red-400 text-xs text-center py-1">{error}</Text>
+      ) : null}
+
+      {replyTarget ? (
+        <View className="bg-dark-surface px-3 py-2 flex-row items-center border-t border-dark-border">
+          <View
+            style={{ width: 3, alignSelf: "stretch", backgroundColor: "#60A5FA", borderRadius: 2, marginRight: 8 }}
+          />
+          <View className="flex-1">
+            <Text className="text-blue-300 text-xs font-semibold">
+              Replying to {replyTarget.sender === user?.id ? "yourself" : displayName}
+            </Text>
+            <View className="flex-row items-center mt-0.5">
+              {replyTarget.media?.type === "image" ? (
+                <Ionicons name="image" size={12} color="#B8C5CC" style={{ marginRight: 4 }} />
+              ) : replyTarget.media?.type === "video" ? (
+                <Ionicons name="videocam" size={12} color="#B8C5CC" style={{ marginRight: 4 }} />
+              ) : replyTarget.media?.type === "audio" ? (
+                <Ionicons name="mic" size={12} color="#B8C5CC" style={{ marginRight: 4 }} />
+              ) : null}
+              <Text className="text-dark-muted text-xs flex-1" numberOfLines={1}>
+                {replyTarget.content ||
+                  (replyTarget.media?.type === "image"
+                    ? "Photo"
+                    : replyTarget.media?.type === "video"
+                      ? "Video"
+                      : replyTarget.media?.type === "audio"
+                        ? "Voice message"
+                        : "")}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity onPress={() => setReplyTarget(null)} className="p-1 ml-2">
+            <Ionicons name="close" size={20} color="#8696A0" />
+          </TouchableOpacity>
+        </View>
       ) : null}
 
       <View

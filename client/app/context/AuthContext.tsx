@@ -10,6 +10,7 @@ type AuthContextType = {
   login: (email: string, password: string) => Promise<void>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  updateUser: (next: User) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -18,6 +19,7 @@ const AuthContext = createContext<AuthContextType>({
   login: async () => {},
   signUp: async () => {},
   signOut: async () => {},
+  updateUser: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -64,8 +66,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const updateUser = async (next: User) => {
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(next));
+    setUser(next);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signUp, signOut }}>
+    <AuthContext.Provider
+      value={{ user, isLoading, login, signUp, signOut, updateUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

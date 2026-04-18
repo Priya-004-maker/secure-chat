@@ -4,11 +4,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Image,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { router, Link } from "expo-router";
 import { useAuth } from "./context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
@@ -46,7 +45,8 @@ export default function Login() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior="padding"
+      keyboardVerticalOffset={0}
       className="flex-1 bg-dark-bg"
     >
       <View className="flex-1 justify-center px-8">
