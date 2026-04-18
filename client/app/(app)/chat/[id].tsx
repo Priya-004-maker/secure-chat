@@ -671,8 +671,8 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={insets.top}
       className="flex-1 bg-dark-bg"
     >
       <View
@@ -739,7 +739,9 @@ export default function ChatScreen() {
       ) : null}
 
       <View
-        style={{ paddingBottom: Math.max(insets.bottom, 8) }}
+        style={{
+          paddingBottom: Math.max(insets.bottom, 8),
+        }}
         className="bg-dark-surface px-2 py-2 flex-row items-end"
       >
         {recorderState.isRecording ? (
