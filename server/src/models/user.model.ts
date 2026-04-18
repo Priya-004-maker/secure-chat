@@ -3,6 +3,11 @@ import { Schema, model, type InferSchemaType } from "mongoose";
 const userSchema = new Schema(
   {
     name: { type: String, trim: true },
+    avatar: {
+      type: String,
+      trim: true,
+      default: "https://api.dicebear.com/9.x/glass/png?seed=Oliver",
+    },
     email: {
       type: String,
       required: true,

@@ -25,6 +25,7 @@ const messageSchema = new Schema(
     recipient: { type: Types.ObjectId, ref: "User", required: true, index: true },
     content: { type: String, default: "", trim: true, maxlength: 4000 },
     media: { type: mediaSchema, default: null },
+    replyTo: { type: Types.ObjectId, ref: "Message", default: null, index: true },
     sentAt: { type: Date, default: Date.now, expires: NINETY_DAYS_IN_SECONDS },
     seenAt: { type: Date, default: null },
   },

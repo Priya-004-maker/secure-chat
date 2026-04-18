@@ -97,7 +97,7 @@ export const deleteMessage = async (req: AuthedRequest, res: Response) => {
 };
 
 export const sendMessage = async (req: AuthedRequest, res: Response) => {
-  const { recipientId, content, media } = req.body ?? {};
+  const { recipientId, content, media, replyTo } = req.body ?? {};
   if (!recipientId || !Types.ObjectId.isValid(recipientId)) {
     res.status(400).json({ error: "valid recipientId is required" });
     return;
@@ -116,11 +116,36 @@ export const sendMessage = async (req: AuthedRequest, res: Response) => {
     return;
   }
 
-  const message = await MessageModel.create({
+  let replyToId: Types.ObjectId | null = null;
+  if (replyTo != null) {
+    if (typeof replyTo !== "string" || !Types.ObjectId.isValid(replyTo)) {
+      res.status(400).json({ error: "invalid replyTo id" });
+      return;
+    }
+    const parent = await MessageModel.findById(replyTo).select("sender recipient");
+    if (!parent) {
+      res.status(404).json({ error: "reply target not found" });
+      return;
+    }
+    const participants = [String(parent.sender), String(parent.recipient)];
+    if (!participants.includes(req.userId) || !participants.includes(String(recipientId))) {
+      res.status(403).json({ error: "cannot reply to a message from another conversation" });
+      return;
+    }
+    replyToId = parent._id;
+  }
+
+  const created = await MessageModel.create({
     sender: req.userId,
     recipient: recipientId,
     content: text,
     media: parsed?.media ?? null,
+    replyTo: replyToId,
+  });
+
+  const message = await MessageModel.findById(created._id).populate({
+    path: "replyTo",
+    select: "sender recipient content media sentAt",
   });
 
   res.status(201).json(serializeMessage(message));
@@ -133,21 +158,39 @@ export const getConversation = async (req: AuthedRequest, res: Response) => {
     return;
   }
 
+  const rawLimit = Number(req.query.limit);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100) : 50;
+
+  const before = typeof req.query.before === "string" ? req.query.before : "";
+  if (before && !Types.ObjectId.isValid(before)) {
+    res.status(400).json({ error: "invalid before cursor" });
+    return;
+  }
+
   await MessageModel.updateMany(
     { sender: otherUserId, recipient: req.userId, seenAt: null },
     { $set: { seenAt: new Date() } },
   );
 
-  const messages = await MessageModel.find({
+  const filter: Record<string, unknown> = {
     $or: [
       { sender: req.userId, recipient: otherUserId },
       { sender: otherUserId, recipient: req.userId },
     ],
-  })
-    .sort({ sentAt: 1 })
-    .limit(200);
+  };
+  if (before) filter._id = { $lt: new Types.ObjectId(before) };
 
-  res.json(messages.map(serializeMessage));
+  const page = await MessageModel.find(filter)
+    .sort({ _id: -1 })
+    .limit(limit + 1)
+    .populate({ path: "replyTo", select: "sender recipient content media sentAt" });
+
+  const hasMore = page.length > limit;
+  const slice = hasMore ? page.slice(0, limit) : page;
+  const messages = slice.reverse().map(serializeMessage);
+  const nextCursor = hasMore ? String(slice[0]?._id) : null;
+
+  res.json({ messages, nextCursor, hasMore });
 };
 
 export const listConversations = async (req: AuthedRequest, res: Response) => {

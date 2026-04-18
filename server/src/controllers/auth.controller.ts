@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { UserModel } from "@/models/user.model";
 import { signToken } from "@/lib/jwt";
+import { avatarUrlFor } from "@/lib/s3";
 
 export const signup = async (req: Request, res: Response) => {
   const { name, email, password } = req.body ?? {};
@@ -26,7 +27,7 @@ export const signup = async (req: Request, res: Response) => {
 
   res.status(201).json({
     token,
-    user: { id: user.id, name: user.name, email: user.email },
+    user: { id: user.id, name: user.name, email: user.email, avatar: avatarUrlFor(user.avatar) },
   });
 };
 
@@ -54,6 +55,6 @@ export const login = async (req: Request, res: Response) => {
   const token = signToken(user.id);
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email },
+    user: { id: user.id, name: user.name, email: user.email, avatar: avatarUrlFor(user.avatar) },
   });
 };

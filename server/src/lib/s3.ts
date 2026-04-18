@@ -50,6 +50,34 @@ export const publicUrlFor = (key: string) => {
   return `https://${bucket}.s3.${region}.amazonaws.com/${fullKey}`;
 };
 
+export const avatarKeyFor = (userId: string) => `${userId}/avatar`;
+
+export const avatarUrlFor = (value?: string | null) => {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  return publicUrlFor(value);
+};
+
+export async function createAvatarUploadUrl({
+  userId,
+  contentType,
+}: {
+  userId: string;
+  contentType: string;
+}) {
+  if (!bucket) throw new Error("AWS_BUCKET_NAME is not configured");
+  if (!userId) throw new Error("userId is required to build an upload key");
+  const key = avatarKeyFor(userId);
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: toS3Key(key),
+    ContentType: contentType,
+    CacheControl: "no-cache",
+  });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 60 * 5 });
+  return { uploadUrl, key, expiresIn: 60 * 5 };
+}
+
 export type PresignInput = {
   userId: string;
   type: "image" | "video" | "audio";
