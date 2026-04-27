@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { messages as messagesApi, type Conversation } from "../lib/api";
 import { isOnline } from "../lib/presence";
+import { requestNotificationPermissions, updateBadgeCountFromConversations } from "../lib/notifications";
 
 function initials(name?: string, email?: string) {
   const source = (name ?? email ?? "").trim();
@@ -154,6 +155,7 @@ export default function ChatList() {
     try {
       const data = await messagesApi.conversations();
       setConvos(data);
+      updateBadgeCountFromConversations(data);
     } catch (err) {
       console.error("Failed to load conversations:", err);
     } finally {
@@ -164,6 +166,7 @@ export default function ChatList() {
 
   useFocusEffect(
     useCallback(() => {
+      requestNotificationPermissions();
       load();
       const timer = setInterval(load, 3000);
       return () => clearInterval(timer);

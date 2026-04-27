@@ -46,6 +46,7 @@ import {
   EmojiPicker,
   emojiData,
 } from "@hiraku-ai/react-native-emoji-picker";
+import { updateBadgeCountFromConversations } from "../../lib/notifications";
 
 function initials(name?: string, email?: string) {
   const source = (name ?? email ?? "").trim();
@@ -465,6 +466,10 @@ export default function ChatScreen() {
           }
           return [...fresh, ...prev];
         });
+
+        // After fetching messages (which marks them as seen on server),
+        // refresh the badge count by fetching the conversation list.
+        messagesApi.conversations().then(updateBadgeCountFromConversations).catch(() => {});
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
       }
